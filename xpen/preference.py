@@ -27,18 +27,19 @@ class Preference:
     font: str = "San Francisco"
     """The font used in the application"""
 
-    font_color: str = "#2c3e50"
+    font_color: str = "#2d3436"
 
-    page_text_background: str = "#bdc3c7"
+    page_text_background: str = "#fab1a0"
 
-    page_text_bottom_border: str = "#95a5a6"
+    account_line_separator: str = "#b2bec3"
 
-    generic_background_1: str = "#ecf0f1"
-    """1st variant of the generic background color used in the application"""
+    generic_background_1: str = "#dfe6e9"
 
-    sidebar_background_1: str = "#2ecc71"
+    sidebar_background_1: str = "#55efc4"
 
-    button_color_1: str = "#9b59b6"
+    button_color_1: str = "#55efc4"
+
+    button_color_2: str = "#ff7675"
 
     def save(self, file_path: str):
         """
@@ -51,11 +52,12 @@ class Preference:
                 "font": self.font,
                 "font_color": self.font_color,
                 "page_text_background": self.page_text_background,
-                "page_text_bottom_border": self.page_text_bottom_border,
+                "account_line_separator": self.account_line_separator,
                 "text_background_2": self.page_text_background,
                 "generic_background_1": self.generic_background_1,
                 "sidebar_background_1": self.sidebar_background_1,
                 "button_color_1": self.button_color_1,
+                "button_color_2": self.button_color_2,
             }
 
             json.dump(preference_json, preference_file)
@@ -84,33 +86,23 @@ class Preference:
             else:
                 raise InvalidPreferenceFileError()
 
-            # reads the font
             font = str(preference_json["font"])
-
-            # reads the font color
             font_color = str(preference_json["font_color"])
-
-            # reads the text background color
             page_text_background = str(preference_json["page_text_background"])
-
-            # reads the text background color
-            page_text_bottom_border = str(preference_json["page_text_bottom_border"])
-
-            # reads the generic background color
+            account_line_separator = str(preference_json["account_line_separator"])
             generic_background_1 = str(preference_json["generic_background_1"])
-
-            # reads the sidebar background color
             sidebar_background_1 = str(preference_json["sidebar_background_1"])
-
             button_color_1 = str(preference_json["button_color_1"])
+            button_color_2 = str(preference_json["button_color_2"])
 
             return Preference(
                 currency,
                 font,
                 font_color,
                 page_text_background,
-                page_text_bottom_border,
+                account_line_separator,
                 generic_background_1,
                 sidebar_background_1,
                 button_color_1,
+                button_color_2,
             )

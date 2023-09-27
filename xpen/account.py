@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
-import datetime
+from datetime import date
+import os
 
 
 class RecordType(Enum):
@@ -14,7 +15,7 @@ class RecordType(Enum):
 class Record:
     tag: str | None
     amount: int
-    date: datetime.date
+    date: date
     note: str | None
     type: RecordType
 
@@ -35,18 +36,59 @@ class DefaultAccountAvatar:
     number: int
 
 
-AccountAvator = CustomAccountAvatar | DefaultAccountAvatar
+class RecordFile:
+    __records: list[Record]
+    __record_file_key: RecordFileKey
+
+    __dirty: bool
 
 
 class Account:
     __account_data_directory: str
-    __avatar: AccountAvator
-    __account_name: str
 
-    __found_record_files: list[RecordFileKey]
+    __record_files_by_key: dict[RecordFileKey, RecordFile]
 
-    def __init__(self, account_name: str) -> None:
-        self.__account_name = account_name
+    def __init__(self, account_data_directory: str) -> None:
+        self.__account_data_directory = account_data_directory
+
+    def __search_available_record_files(self) -> list[RecordFileKey]:
+        # list all the .json file with YYYY_MM.json format
+        # and return a list of RecordFileKey
+
+        records: list[RecordFileKey] = []
+        for file_name in os.listdir(self.__account_data_directory):
+            if not (file_name.endswith(".json") or os.path.isfile(file_name)):
+                continue
+
+            split = file_name.split("_")
+
+            if len(split) != 2:
+                continue
+
+            year_number: int = 0
+            month_number: int = 0
+
+            try:
+                year_number = int(split[0])
+                month_number = int(split[1])
+            except Exception:
+                continue
+
+            try:
+                date(year_number, month_number, 1)
+            except Exception:
+                continue
+
+            records.append(RecordFileKey(month_number, year_number))
+
+        return records
 
     def get_account_name(self) -> str:
-        return self.__account_name
+        # returns the stem of the account data directory
+        return os.path.basename(self.__account_data_directory)
+
+    def get_last_modified(self) -> date | None:
+        return date(2023, 1, 1)
+
+    def get_current_balance(self) -> int:
+        return 69420
