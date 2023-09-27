@@ -1,32 +1,92 @@
+# ruff: noqa: E501
+
 from __future__ import annotations
-from xpen.preference import Preference
-from xpen.resource import Resource
-from xpen.widget import HoveredBrightnessButton
-from xpen.account import Account
-from typing import Final
-from PySide6.QtGui import QPixmap, QPainter, QColor
+
+import os
+import string
+from abc import ABC, abstractmethod
+from decimal import Decimal
+from enum import Enum
+from typing import Final, Callable, Any
+
+import platformdirs
+from PySide6.QtCore import QSize, Qt, QEvent
+from PySide6.QtGui import QColor, QPainter, QPixmap, QMouseEvent, QEnterEvent, QIcon
 from PySide6.QtWidgets import (
-    QMessageBox,
     QApplication,
-    QMainWindow,
-    QVBoxLayout,
-    QWidget,
+    QDialog,
     QFrame,
-    QSizePolicy,
-    QHBoxLayout,
-    QLabel,
     QGraphicsDropShadowEffect,
     QGridLayout,
-    QScrollArea,
+    QHBoxLayout,
+    QLabel,
     QLineEdit,
-    QDialog,
+    QMainWindow,
+    QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
-from enum import Enum
-from PySide6.QtCore import Qt, QSize
-import platformdirs
-import os
-from abc import ABC, abstractmethod
+from PySide6.QtSvg import QSvgRenderer
+
+from xpen.account import Account
+from xpen.preference import Preference
+from xpen.resource import Resource
+
+
+class HoveredBrightnessButton(QPushButton):
+    __icon_svg: QSvgRenderer
+    __button_size: QSize
+    __icon_size_factor: float
+    __hover_icon_size_factor: float
+
+    NORMAL_OPACITY: Final[float] = 0.75
+    HOVERED_OPACITY: Final[float] = 1.25
+
+    def __init__(
+        self,
+        icon_svg: QSvgRenderer,
+        button_size: QSize,
+        style: str = "background-color: transparent; border: 0px;",
+        icon_size_factor: float = 0.5,
+        hover_icon_size_factor: float = 1.3,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.__button_size = button_size
+        self.__icon_svg = icon_svg
+        self.__icon_size_factor = icon_size_factor
+        self.__hover_icon_size_factor = hover_icon_size_factor
+        self.setIconSize(button_size * self.__icon_size_factor)
+        self.setFixedSize(button_size)
+        self.setFlat(True)
+        self.setStyleSheet(style)
+        self.setIcon(self.__create_icon(HoveredBrightnessButton.NORMAL_OPACITY))
+
+    def enterEvent(self, event: QEnterEvent) -> None:
+        self.setIconSize(
+            self.__button_size * self.__icon_size_factor * self.__hover_icon_size_factor
+        )
+        self.setIcon(self.__create_icon(HoveredBrightnessButton.HOVERED_OPACITY))
+        return super().enterEvent(event)
+
+    def leaveEvent(self, event: QEvent) -> None:
+        self.setIconSize(self.__button_size * self.__icon_size_factor)
+        self.setIcon(self.__create_icon(HoveredBrightnessButton.NORMAL_OPACITY))
+        return super().leaveEvent(event)
+
+    def __create_icon(self, brightness_factor: float) -> QIcon:
+        pixmap = QPixmap(self.__button_size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setOpacity(brightness_factor)
+        self.__icon_svg.render(painter)
+        painter.setCompositionMode(painter.CompositionMode.CompositionMode_SourceIn)
+        painter.fillRect(pixmap.rect(), QColor(0, 0, 0, 255))
+        painter.end()
+        return QIcon(pixmap)
 
 
 class Page(ABC):
@@ -46,8 +106,8 @@ class PageType(Enum):
 class RecordPage(Page):
     __application: Application
 
-    __record_page_widget: QWidget
-    __record_page_layout: QVBoxLayout
+    __page_widget: QWidget
+    __page_layout: QVBoxLayout
     __account: Account
 
     def __init__(self, application: Application, account_name: str):
@@ -56,8 +116,36 @@ class RecordPage(Page):
         # pedantic check
         self.__account = application.get_accounts_by_name(account_name)
 
+        self.__page_layout = QVBoxLayout()
+        self.__page_layout.setContentsMargins(0, 0, 0, 0)
+        self.__page_layout.setSpacing(0)
+        self.__page_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self.__page_widget = QWidget()
+        self.__page_widget.setLayout(self.__page_layout)
+        self.__page_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+
+        # Add account label
+        account_label = QLabel("Records")
+        account_label.setStyleSheet(
+            f"""
+            font: 24px;
+            color: {self.__application.get_preference().font_color};
+            padding: 15px;
+            background-color: {self.__application.get_preference().generic_background_1}; 
+            """
+        )
+        account_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        self.__page_layout.insertWidget(
+            0,
+            account_label,
+        )
+
     def get_page_widget(self) -> QWidget:
-        return self.__record_page_widget
+        return self.__page_widget
 
 
 class NoAccountPage(Page):
@@ -189,6 +277,10 @@ class AccountSelectionPage(Page):
                 color: {self.__application.get_preference().font_color};
             """
 
+            account_name.mousePressEvent = self.__select_account_lambda(
+                account.get_account_name()
+            )  # type: ignore
+
             account_name.setStyleSheet(style_sheet)
             balance.setStyleSheet(style_sheet)
             date.setStyleSheet(style_sheet)
@@ -237,6 +329,16 @@ class AccountSelectionPage(Page):
             """
         )
 
+    def __select_account_lambda(
+        self, account_name: str
+    ) -> Callable[[QMouseEvent], None]:
+        return lambda event: self.__select_account_handler(event, account_name)
+
+    def __select_account_handler(self, mouse_event: QMouseEvent, name: str):
+        if mouse_event.button() == Qt.MouseButton.LeftButton:
+            print(f"Select account {name}")
+            self.__application.go_to_record_page(name)
+
     def get_page_widget(self) -> QWidget:
         return self.__account_selection_scroll
 
@@ -269,8 +371,8 @@ class AccountPage(Page):
             f"""
             font: 24px;
             color: {self.__application.get_preference().font_color};
-            padding: 15px 30px 15px 30px;
-            background-color: {self.__application.get_preference().generic_background_1};
+            padding: 15px; 
+            background-color: {self.__application.get_preference().generic_background_1}; 
             """
         )
         account_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -399,7 +501,7 @@ class AccountPage(Page):
 
             error_dialog.exec()
 
-        if not account_name.isalnum():
+        if not AccountPage.__is_valid_account_name(account_name):
             show_error_dialog("Invalid Account Name")
         elif os.path.exists(
             os.path.join(self.__application.get_appdata_path(), account_name)
@@ -409,7 +511,18 @@ class AccountPage(Page):
             os.makedirs(
                 os.path.join(self.__application.get_appdata_path(), account_name)
             )
+            self.__application.get_accounts_by_name(account_name).add_record(
+                "TEST", Decimal(100), "TEST"
+            )
             self.__show_account_page()
+
+    @staticmethod
+    def __is_valid_account_name(name: str) -> bool:
+        for c in name:
+            if c in string.punctuation:
+                return False
+
+        return True
 
     # override
     def get_page_widget(self) -> QWidget:
@@ -450,15 +563,15 @@ class SideBarMenu(Page):
 
         self.__side_bar_layout.setContentsMargins(0, 0, 0, 0)
         self.__side_bar_layout.addWidget(
-            HoveredBrightnessButton(
+            self.__create_side_bar_button(
                 self.__application.get_resource().account_bar_icon,
-                QSize(SideBarMenu.MENU_SIZE, SideBarMenu.MENU_SIZE),
+                lambda: self.__redirect_to_account_page(),
             )
         )
         self.__side_bar_layout.addWidget(
-            HoveredBrightnessButton(
+            self.__create_side_bar_button(
                 self.__application.get_resource().record_bar_icon,
-                QSize(SideBarMenu.MENU_SIZE, SideBarMenu.MENU_SIZE),
+                lambda: self.__redirect_to_record_page(),
             )
         )
         self.__side_bar_layout.addWidget(
@@ -491,6 +604,24 @@ class SideBarMenu(Page):
             f"background-color: {self.__application.get_preference().sidebar_background_1}"
         )
 
+    def __redirect_to_account_page(self):
+        self.__application.go_to_account_page()
+
+    def __redirect_to_record_page(self):
+        self.__application.go_to_record_page()
+
+    def __create_side_bar_button(
+        self, icon: QSvgRenderer, command: Any
+    ) -> HoveredBrightnessButton:
+        button = HoveredBrightnessButton(
+            icon,
+            QSize(SideBarMenu.MENU_SIZE, SideBarMenu.MENU_SIZE),
+        )
+
+        button.clicked.connect(command)
+
+        return button
+
     # override
     def get_page_widget(self) -> QWidget:
         return self.__side_bar_widget
@@ -511,6 +642,8 @@ class Application:
     __current_page: Page | None
 
     __acounts_by_name: dict[str, Account]
+
+    __working_account: Account | None
 
     def __init__(self):
         RESET_DIR_PROMPT = (
@@ -583,7 +716,13 @@ class Application:
         self.__side_bar_menu = SideBarMenu(self)
         self.__page_layout.insertWidget(0, self.__side_bar_menu.get_page_widget())
 
-        self.add_widget_to_page(AccountPage(self))
+        accounts = self.get_accounts()
+
+        if len(accounts) > 0:
+            # use the most recently modified account as the working account
+            self.__working_account = accounts[0]
+
+        self.__set_page_widget(AccountPage(self))
 
         self.__application.exec()
 
@@ -594,14 +733,15 @@ class Application:
         """Gets the preference of the application"""
         return self.__preference
 
-    def add_widget_to_page(self, widget: Page) -> None:
+    def __set_page_widget(self, widget: Page):
         if self.__current_page is not None:
             self.__page_layout.replaceWidget(
                 self.__current_page.get_page_widget(), widget.get_page_widget()
             )
-            self.__current_page = widget
         else:
             self.__page_layout.insertWidget(1, widget.get_page_widget())
+
+        self.__current_page = widget
 
     def get_main_window(self) -> QMainWindow:
         return self.__main_window
@@ -609,14 +749,38 @@ class Application:
     def get_appdata_path(self) -> str:
         return self.__appdata_path
 
+    def go_to_account_page(self) -> None:
+        self.__set_page_widget(AccountPage(self))
+
+    def go_to_record_page(self, name: str | None = None) -> None:
+        """
+        Goes to the record page based on the `__working_account` field.
+        """
+
+        if name is not None:
+            self.__set_page_widget(RecordPage(self, name))
+        else:
+            if self.__working_account is None:
+                return
+
+            self.__set_page_widget(
+                RecordPage(self, self.__working_account.get_account_name())
+            )
+
     def get_accounts(self) -> list[Account]:
+        """
+        Gets all the accounts in the application data folder.
+
+        The accounts are sorted by last modified date, with the most recently modified account
+        first.
+        """
+
         # search all the account data folder
         account_data_folder = os.path.join(self.__appdata_path)
 
         accounts: list[Account] = []
         for account_name in os.listdir(account_data_folder):
             account_path = os.path.join(account_data_folder, account_name)
-
             if not os.path.isdir(account_path):
                 continue
 
@@ -624,6 +788,8 @@ class Application:
                 self.__acounts_by_name[account_name] = Account(account_path)
 
             accounts.append(self.__acounts_by_name[account_name])
+
+        accounts.sort(key=lambda account: account.get_last_modified(), reverse=True)
 
         return accounts
 

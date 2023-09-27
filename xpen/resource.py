@@ -1,7 +1,9 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from PySide6.QtSvg import QSvgRenderer
+
 import os
+from dataclasses import dataclass
+
+from PySide6.QtSvg import QSvgRenderer
 
 
 @dataclass(frozen=True)
