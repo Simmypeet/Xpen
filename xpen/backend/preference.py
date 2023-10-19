@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 
+from backend.corrupted import CorruptedDataFileError
+
 
 class Currency(Enum):
     """An enumeration of all supported currencies"""
@@ -12,8 +14,8 @@ class Currency(Enum):
     USD = 2
 
 
-class InvalidPreferenceFileError(Exception):
-    """An exception raised when the preference file is invalid"""
+class CorruptedPreferenceFileError(CorruptedDataFileError):
+    """An exception raised when the preference file is invalid/corrupted"""
 
     pass
 
@@ -23,23 +25,13 @@ class Preference:
     """Represents the user preference of the application"""
 
     currency: Currency = Currency.THB
-    """The currency used in the application"""
-
     font: str = "San Francisco"
-    """The font used in the application"""
-
     font_color: str = "#2d3436"
-
     page_text_background: str = "#fab1a0"
-
     account_line_separator: str = "#b2bec3"
-
     generic_background_1: str = "#dfe6e9"
-
     sidebar_background_1: str = "#55efc4"
-
     button_color_1: str = "#55efc4"
-
     button_color_2: str = "#ff7675"
 
     def save(self, file_path: str):
@@ -77,33 +69,44 @@ class Preference:
             preference_json = json.load(preference_file)
 
             # reads the currency
-            currency_json = preference_json["currency"]
-            currency = None
+            try:
+                currency_json = preference_json["currency"]
+                currency = None
 
-            if currency_json == "THB":
-                currency = Currency.THB
-            elif currency_json == "USD":
-                currency = Currency.USD
-            else:
-                raise InvalidPreferenceFileError()
+                if currency_json == "THB":
+                    currency = Currency.THB
+                elif currency_json == "USD":
+                    currency = Currency.USD
+                else:
+                    raise CorruptedPreferenceFileError()
 
-            font = str(preference_json["font"])
-            font_color = str(preference_json["font_color"])
-            page_text_background = str(preference_json["page_text_background"])
-            account_line_separator = str(preference_json["account_line_separator"])
-            generic_background_1 = str(preference_json["generic_background_1"])
-            sidebar_background_1 = str(preference_json["sidebar_background_1"])
-            button_color_1 = str(preference_json["button_color_1"])
-            button_color_2 = str(preference_json["button_color_2"])
+                font = str(preference_json["font"])
+                font_color = str(preference_json["font_color"])
+                page_text_background = str(
+                    preference_json["page_text_background"]
+                )
+                account_line_separator = str(
+                    preference_json["account_line_separator"]
+                )
+                generic_background_1 = str(
+                    preference_json["generic_background_1"]
+                )
+                sidebar_background_1 = str(
+                    preference_json["sidebar_background_1"]
+                )
+                button_color_1 = str(preference_json["button_color_1"])
+                button_color_2 = str(preference_json["button_color_2"])
 
-            return Preference(
-                currency,
-                font,
-                font_color,
-                page_text_background,
-                account_line_separator,
-                generic_background_1,
-                sidebar_background_1,
-                button_color_1,
-                button_color_2,
-            )
+                return Preference(
+                    currency,
+                    font,
+                    font_color,
+                    page_text_background,
+                    account_line_separator,
+                    generic_background_1,
+                    sidebar_background_1,
+                    button_color_1,
+                    button_color_2,
+                )
+            except Exception:
+                raise CorruptedPreferenceFileError()

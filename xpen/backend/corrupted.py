@@ -1,0 +1,2 @@
+class CorruptedDataFileError(Exception):
+    pass

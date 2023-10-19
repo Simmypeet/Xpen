@@ -8,12 +8,15 @@ from PySide6.QtSvg import QSvgRenderer
 
 @dataclass(frozen=True)
 class Resource:
+    """
+    Contains all the graphical resources used by the application.
+    """
+
     account_bar_icon: QSvgRenderer
     record_bar_icon: QSvgRenderer
     calendar_bar_icon: QSvgRenderer
     chart_bar_icon: QSvgRenderer
     setting_bar_icon: QSvgRenderer
-
     account_not_found_symol: QSvgRenderer
     new_account_symbol: QSvgRenderer
 
@@ -35,7 +38,9 @@ class Resource:
             os.path.join(resource_folder, "icon", "setting_bar_icon.svg")
         )
         account_not_found_symbol = QSvgRenderer(
-            os.path.join(resource_folder, "symbol", "account_not_found_symbol.svg")
+            os.path.join(
+                resource_folder, "symbol", "account_not_found_symbol.svg"
+            )
         )
         new_account_symbol = QSvgRenderer(
             os.path.join(resource_folder, "symbol", "new_account_symbol.svg")

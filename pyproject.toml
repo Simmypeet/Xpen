@@ -4,4 +4,8 @@ version = "0.0.1"
 description = "KMITL Software Engineering Final Project"
 authors = [{ name = "Tada Siangchin", email = "66011245@kmitl.ac.th" }]
 dependencies = ['platformdirs>=3.10.0', 'PySide6==6.5.1.1']
-requires-python = ">=3.11"
+requires-python = ">=3.12"
+
+# Black formatter
+[tool.black]
+line-length = 79

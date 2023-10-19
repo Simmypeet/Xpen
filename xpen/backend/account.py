@@ -80,7 +80,7 @@ class RecordFile(object):
     def get_record_file_path(self) -> str:
         return os.path.join(
             self.__account_data_directory,
-            f"{self.__record_file_key.year_number}_{self.__record_file_key.month_number}.json",
+            f"{self.__record_file_key.year_number}_{self.__record_file_key.month_number}.json",  # noqa: E501
         )
 
     def __save_to_file(self):
@@ -174,7 +174,7 @@ class Account:
         return modified_date_time
 
     def get_current_balance(self) -> int:
-        return 69420
+        return 10000
 
     def get_record_file(self, key: RecordFileKey) -> RecordFile:
         if key not in self.__record_files_by_key:
@@ -190,5 +190,7 @@ class Account:
         amount: Decimal,
         note: str | None,
     ):
-        record_file_key = RecordFileKey(datetime.today().month, datetime.today().year)
+        record_file_key = RecordFileKey(
+            datetime.today().month, datetime.today().year
+        )
         self.get_record_file(record_file_key).add_record(tag, amount, note)
