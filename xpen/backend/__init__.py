@@ -1,3 +1,4 @@
+from typing import Optional
 from backend.account import Account
 from backend.history import History
 from backend.preference import Preference
@@ -15,7 +16,7 @@ class Backend:
     __resource: Resource
     __history: History
     __application_data_path: str
-    __current_working_account: None | Account
+    __current_working_account: Optional[Account]
 
     def __init__(
         self,
@@ -48,7 +49,7 @@ class Backend:
         return self.__application_data_path
 
     @property
-    def current_working_account(self) -> Account | None:
+    def current_working_account(self) -> Optional[Account]:
         return self.__current_working_account
 
     @current_working_account.setter
@@ -81,5 +82,5 @@ class Backend:
             if not os.path.isdir(account_path):
                 continue
 
-            if account_path not in self.__account_by_name:
+            if account_folder not in self.__account_by_name:
                 self.__account_by_name[account_folder] = Account(account_path)

@@ -13,6 +13,20 @@ class Currency(Enum):
     THB = (1,)
     USD = 2
 
+    def currency_text(self) -> str:
+        """
+        Returns the currency text of the currency.
+
+        :return: The currency text of the currency
+        """
+
+        if self == Currency.THB:
+            return "THB"
+        elif self == Currency.USD:
+            return "USD"
+        else:
+            raise Exception("Unknown currency")
+
 
 class CorruptedPreferenceFileError(CorruptedDataFileError):
     """An exception raised when the preference file is invalid/corrupted"""
@@ -33,6 +47,42 @@ class Preference:
     sidebar_background_1: str = "#55efc4"
     button_color_1: str = "#55efc4"
     button_color_2: str = "#ff7675"
+    expense_color: str = "#c0392b"
+    income_color: str = "#27ae60"
+    scroll_style_sheet: str = """
+        QScrollBar:vertical {
+            border: none;
+            background: #FFFFFF;
+            width: 10px;
+            margin: 0px 0px 0px 0px;
+        }
+
+        QScrollBar::handle:vertical {
+            background: #D0D0D0;
+            min-height: 20px;
+            border-radius: 5px;
+        }
+
+        QScrollBar::add-line:vertical {
+            border: none;
+            background: none;
+            height: 0px;
+            subcontrol-position: bottom;
+            subcontrol-origin: margin;
+        }
+
+        QScrollBar::sub-line:vertical {
+            border: none;
+            background: none;
+            height: 0px;
+            subcontrol-position: top;
+            subcontrol-origin: margin;
+        }
+
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+            background: none;
+        }
+    """
 
     def save(self, file_path: str):
         """
@@ -51,6 +101,8 @@ class Preference:
                 "sidebar_background_1": self.sidebar_background_1,
                 "button_color_1": self.button_color_1,
                 "button_color_2": self.button_color_2,
+                "expense_color": self.expense_color,
+                "income_color": self.income_color,
             }
 
             json.dump(preference_json, preference_file)
@@ -96,6 +148,8 @@ class Preference:
                 )
                 button_color_1 = str(preference_json["button_color_1"])
                 button_color_2 = str(preference_json["button_color_2"])
+                expense_color = str(preference_json["expense_color"])
+                income_color = str(preference_json["income_color"])
 
                 return Preference(
                     currency,
@@ -107,6 +161,8 @@ class Preference:
                     sidebar_background_1,
                     button_color_1,
                     button_color_2,
+                    expense_color,
+                    income_color,
                 )
             except Exception:
                 raise CorruptedPreferenceFileError()

@@ -1,15 +1,14 @@
 import os
 import string
-from decimal import Decimal
-from typing import Callable
+from typing import Callable, Optional
 
-from application.auxiliary import HoveredBrightnessButton
+from application.auxiliary import HoveredBrightnessButton, NoAccountPage
 from application.message import ToRecordPage
 from application.observer import Observer, Subject
 from application.widget import Widget
 from backend import Backend
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPixmap
+from PySide6.QtGui import QColor, QMouseEvent
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -23,61 +22,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-
-class NoAccountPage(Widget):
-    __widget: QWidget
-    __backend: Backend
-
-    __no_account_layout: QVBoxLayout
-
-    def __init__(self, backend: Backend):
-        self.__widget = QWidget()
-        self.__backend = backend
-
-        self.__no_account_layout = QVBoxLayout()
-        self.__no_account_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # show no account page and prompt user to create one
-        pixmap = QPixmap(QSize(50, 50))
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        self.__backend.resource.account_not_found_symol.render(painter)
-        painter.setCompositionMode(
-            painter.CompositionMode.CompositionMode_SourceIn
-        )
-        painter.fillRect(
-            pixmap.rect(), QColor(self.__backend.preference.font_color)
-        )
-        painter.end()
-
-        no_account_symbol = QLabel()
-        no_account_symbol.setPixmap(pixmap)
-        no_account_symbol.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.__no_account_layout.addWidget(no_account_symbol)
-
-        no_account_text = QLabel(
-            "No Accounts Found\n\nCreate New One to Start"
-        )
-        no_account_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        no_account_text.setStyleSheet(
-            f"""
-            font: 16px;
-            color: {self.__backend.preference.font_color};
-            """
-        )
-
-        self.__no_account_layout.addWidget(no_account_text)
-        self.__no_account_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.__widget.setLayout(self.__no_account_layout)
-
-        self.__widget.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-
-    @property
-    def widget(self) -> QWidget:
-        return self.__widget
 
 
 class AccountSelectionPage(Subject, Widget):
@@ -105,7 +49,7 @@ class AccountSelectionPage(Subject, Widget):
             label = QLabel(text)
             label.setStyleSheet(
                 f"""
-                font: 12px;
+                font: 14px;
                 color: {self.__backend.preference.font_color};
                 padding: 6px 2px 6px 6px;
                 font-weight: bold;
@@ -158,22 +102,22 @@ class AccountSelectionPage(Subject, Widget):
 
         accounts = self.__backend.get_accounts()
         for index, account in enumerate(accounts):
-            account_name = QLabel(account.get_account_name())
-            balance = QLabel(f"${account.get_current_balance()}")
-            last_modifier = account.get_last_modified()
+            account_name = QLabel(account.account_name)
+            balance = QLabel(f"${account.current_balance}")
+            last_modifier = account.last_modified
             date = QLabel(
                 f"{last_modifier.day}-{last_modifier.month}-"
                 f"{last_modifier.year} {last_modifier.hour}:"
                 f"{last_modifier.minute}:{last_modifier.second}"
             )
             style_sheet = f"""
-                font: 12px;
+                font: 14px;
                 padding: 4px 2px 4px 6px;
                 color: {self.__backend.preference.font_color};
             """
 
             account_name.mousePressEvent = self.__select_account_lambda(
-                account.get_account_name()
+                account.account_name
             )  # type: ignore
 
             account_name.setStyleSheet(style_sheet)
@@ -219,6 +163,9 @@ class AccountSelectionPage(Subject, Widget):
         self.__account_selection_scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
+        self.__account_selection_scroll.verticalScrollBar().setStyleSheet(
+            self.__backend.preference.scroll_style_sheet
+        )
         self.__account_selection_scroll.setWidgetResizable(True)
         self.__account_selection_scroll.setWidget(
             self.__account_selection_widget
@@ -256,7 +203,7 @@ class AccountPage(Widget, Subject, Observer):
     __page_layout: QVBoxLayout
 
     __new_account_button: HoveredBrightnessButton
-    __current_page: Widget | Subject | None
+    __current_page: Optional[Widget | Subject]
 
     def __init__(self, backend: Backend):
         super().__init__()
@@ -285,10 +232,7 @@ class AccountPage(Widget, Subject, Observer):
         )
         account_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        self.__page_layout.insertWidget(
-            0,
-            account_label,
-        )
+        self.__page_layout.addWidget(account_label)
 
         # Add account page layout
         self.__show_account_page()
@@ -316,10 +260,8 @@ class AccountPage(Widget, Subject, Observer):
             lambda: self.__create_account_button_handler()
         )
 
-        self.__page_layout.insertWidget(
-            2,
-            self.__new_account_button,
-            alignment=Qt.AlignmentFlag.AlignRight,
+        self.__page_layout.addWidget(
+            self.__new_account_button, alignment=Qt.AlignmentFlag.AlignRight
         )
 
     def __create_account_button_handler(self):
@@ -430,9 +372,6 @@ class AccountPage(Widget, Subject, Observer):
                 os.path.join(
                     self.__backend.application_data_path, account_name
                 )
-            )
-            self.__backend.get_account_by_name(account_name).add_record(
-                "TEST", Decimal(100), "TEST"
             )
             self.__show_account_page()
 

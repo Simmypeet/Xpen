@@ -1,18 +1,22 @@
+from __future__ import annotations
+
 import atexit
 import json
 import os
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional, Sequence
+
+from backend.corrupted import CorruptedDataFileError
 
 
 @dataclass
 class Record:
-    tag: str | None
+    tag: Optional[str]
     balance: Decimal
     date: datetime
-    note: str | None
+    note: Optional[str]
 
 
 @dataclass
@@ -33,7 +37,13 @@ class RecordFileKey:
         )
 
 
-class RecordFile(object):
+@dataclass
+class RecordDiff:
+    record: Record
+    diff: Decimal
+
+
+class RecordFile:
     __records: list[Record]
     __record_file_key: RecordFileKey
     __account_data_directory: str
@@ -57,25 +67,41 @@ class RecordFile(object):
 
         atexit.register(self.cleanup)
 
+    @property
+    def records(self) -> Sequence[Record]:
+        return self.__records
+
     @staticmethod
     def __load_from_file(path: str) -> list[Record]:
-        file = open(path, "r")
+        with open(path, "r") as file:
+            try:
+                json_data = json.load(file)
+                records: list[Record] = []
 
-        json_data = json.load(file)
-        records: list[Record] = []
+                for record_json in json_data:
+                    if "tag" in record_json:
+                        tag = str(record_json["tag"])
+                    else:
+                        tag = None
 
-        for record_json in json_data:
-            tag = str(record_json["tag"])
-            balance = Decimal(record_json["balance"])
-            date = record_json["date"]
-            note = str(record_json["note"])
+                    balance = Decimal(record_json["balance"])
+                    date = datetime.fromisoformat(record_json["date"])
 
-            records.append(Record(tag, balance, date, note))
+                    if "note" in record_json:
+                        note = str(record_json["note"])
+                    else:
+                        note = None
 
-        # sort the records by date time
-        records.sort(key=lambda x: x.date)
+                    records.append(Record(tag, balance, date, note))
 
-        return records
+                # check if the date is still sorted
+                for i in range(1, len(records)):
+                    if records[i].date < records[i - 1].date:
+                        raise CorruptedDataFileError()
+
+                return records
+            except Exception:
+                raise CorruptedDataFileError()
 
     def get_record_file_path(self) -> str:
         return os.path.join(
@@ -88,11 +114,16 @@ class RecordFile(object):
             records: list[Any] = []
             for record in self.__records:
                 record_json = {
-                    "tag": record.tag,
                     "balance": str(record.balance),
                     "date": record.date.isoformat(),
-                    "note": record.note,
                 }
+
+                if record.tag is not None:
+                    record_json["tag"] = record.tag
+
+                if record.note is not None:
+                    record_json["note"] = record.note
+
                 records.append(record_json)
 
             json.dump(records, file)
@@ -103,19 +134,145 @@ class RecordFile(object):
             self.__dirty = True
 
     def add_record(
-        self,
-        tag: str | None,
-        balance: Decimal,
-        note: str | None,
+        self, tag: Optional[str], balance: Decimal, note: Optional[str]
     ):
         self.__records.append(Record(tag, balance, datetime.now(), note))
         self.__dirty = True
+
+
+class RecordIterator:
+    __recrod_file_keys: list[RecordFileKey]
+    __current_record_file_index: int
+    __current_record_index: int
+    __current_record_file: Optional[RecordFile]
+
+    __account: Account
+
+    def __init__(self, account: Account) -> None:
+        self.__account = account
+        self.__recrod_file_keys = account.record_file_keys
+
+        self.__recrod_file_keys.sort(
+            key=lambda x: (x.year_number, x.month_number)
+        )
+
+        self.__current_record_file = None
+        self.__current_record_file_index = -1
+        self.__current_record_index = -1
+
+        for i, record_file in enumerate(reversed(self.__recrod_file_keys)):
+            current_record_file = self.__account.get_record_file(record_file)
+
+            if len(current_record_file.records) > 0:
+                self.__current_record_file = current_record_file
+                self.__current_record_file_index = (
+                    len(self.__recrod_file_keys) - i - 1
+                )
+                self.__current_record_index = (
+                    len(self.__current_record_file.records) - 1
+                )
+                break
+
+    def __next_position(self) -> Optional[tuple[int, int]]:
+        if self.__current_record_file is None:
+            return None
+
+        if self.__current_record_index > 0:
+            return (
+                self.__current_record_file_index,
+                self.__current_record_index - 1,
+            )
+        else:
+            for i in reversed(range(0, self.__current_record_file_index)):
+                current_record_file = self.__account.get_record_file(
+                    self.__recrod_file_keys[i]
+                )
+
+                if len(current_record_file.records) > 0:
+                    self.__current_record_file = current_record_file
+                    self.__current_record_file_index = (
+                        len(self.__recrod_file_keys) - i - 1
+                    )
+                    self.__current_record_index = (
+                        len(self.__current_record_file.records) - 1
+                    )
+                    break
+            else:
+                return None
+
+    def forward(self) -> None:
+        next_record = self.__next_position()
+
+        if next_record is None:
+            self.__current_record_file = None
+            self.__current_record_file_index = -1
+            self.__current_record_index = -1
+            return
+
+        self.__current_record_file = self.__account.get_record_file(
+            self.__recrod_file_keys[next_record[0]]
+        )
+        self.__current_record_file_index = next_record[0]
+        self.__current_record_index = next_record[1]
+
+    def next(self) -> Optional[RecordDiff]:
+        result = self.peek()
+        self.forward()
+        return result
+
+    def __iter__(self) -> RecordIterator:
+        return self
+
+    def __next__(self) -> RecordDiff:
+        result = self.next()
+
+        if result is None:
+            raise StopIteration()
+
+        return result
+
+    def peek(self) -> Optional[RecordDiff]:
+        if self.__current_record_file is None:
+            return None
+
+        record = self.__current_record_file.records[
+            self.__current_record_index
+        ]
+
+        match self.__next_position():
+            case None:
+                return RecordDiff(record, record.balance)
+            case (next_record_file_index, next_record_index):
+                if next_record_file_index == self.__current_record_file_index:
+                    return RecordDiff(
+                        record,
+                        record.balance
+                        - self.__current_record_file.records[
+                            next_record_index
+                        ].balance,
+                    )
+                else:
+                    next_record_file = self.__account.get_record_file(
+                        self.__recrod_file_keys[next_record_file_index]
+                    )
+                    return RecordDiff(
+                        record,
+                        record.balance
+                        - next_record_file.records[next_record_index].balance,
+                    )
+
+
+class CorruptedRecordFileError(CorruptedDataFileError):
+    """An exception raised when the preference file is invalid/corrupted"""
+
+    pass
 
 
 class Account:
     __account_data_directory: str
 
     __record_files_by_key: dict[RecordFileKey, RecordFile]
+    __record_file_keys: list[RecordFileKey]
 
     def __init__(self, account_data_directory: str) -> None:
         self.__account_data_directory = account_data_directory
@@ -126,6 +283,11 @@ class Account:
                 record, self.__account_data_directory
             )
 
+        self.__record_file_keys = list(self.__record_files_by_key.keys())
+        self.__record_file_keys.sort(
+            key=lambda x: (x.year_number, x.month_number)
+        )
+
     def __search_available_record_files(self) -> list[RecordFileKey]:
         # list all the .json file with YYYY_MM.json format
         # and return a list of RecordFileKey
@@ -134,7 +296,7 @@ class Account:
         for file_name in os.listdir(self.__account_data_directory):
             if not (file_name.endswith(".json") or os.path.isfile(file_name)):
                 continue
-
+            file_name = file_name.removesuffix(".json")
             split = file_name.split("_")
 
             if len(split) != 2:
@@ -164,31 +326,49 @@ class Account:
 
         return records
 
-    def get_account_name(self) -> str:
+    @property
+    def record_file_keys(self) -> list[RecordFileKey]:
+        return list(self.__record_files_by_key.keys())
+
+    @property
+    def account_name(self) -> str:
         # returns the stem of the account data directory
         return os.path.basename(self.__account_data_directory)
 
-    def get_last_modified(self) -> datetime:
+    @property
+    def last_modified(self) -> datetime:
         modified_time = os.path.getmtime(self.__account_data_directory)
         modified_date_time = datetime.fromtimestamp(modified_time)
         return modified_date_time
 
-    def get_current_balance(self) -> int:
-        return 10000
+    @property
+    def current_balance(self) -> Decimal:
+        if len(self.__record_file_keys) == 0:
+            return Decimal(0)
+        else:
+            record_file = self.__record_files_by_key[
+                self.__record_file_keys[-1]
+            ]
+
+            if len(record_file.records):
+                return record_file.records[-1].balance
+            else:
+                return Decimal(0)
 
     def get_record_file(self, key: RecordFileKey) -> RecordFile:
         if key not in self.__record_files_by_key:
             self.__record_files_by_key[key] = RecordFile(
                 key, self.__account_data_directory
             )
+            self.__record_file_keys.append(key)
 
         return self.__record_files_by_key[key]
 
     def add_record(
         self,
-        tag: str | None,
+        tag: Optional[str],
         amount: Decimal,
-        note: str | None,
+        note: Optional[str],
     ):
         record_file_key = RecordFileKey(
             datetime.today().month, datetime.today().year

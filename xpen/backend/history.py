@@ -26,8 +26,6 @@ class History:
         """
         Loads the history from the file at the given path.
 
-        The accepted format is JSON.
-
         :param path: The path to the history file
         """
 

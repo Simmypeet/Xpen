@@ -1,11 +1,13 @@
 import os
-from typing import Final
+from typing import Final, Optional
 
 import platformdirs
 from application.account import AccountPage
 from application.auxiliary import HoveredBrightnessButton
-from application.message import ToAccountPage
+from application.calendar import CalendarPage
+from application.message import ToAccountPage, ToCalendarPage, ToRecordPage
 from application.observer import Observer, Subject
+from application.record import RecordPage
 from application.widget import Widget
 from backend import Backend
 from backend.history import History
@@ -42,19 +44,19 @@ class SideBarMenu(Subject):
         self.__side_bar_layout.addWidget(
             self.__create_side_bar_button(
                 self.__data.resource.account_bar_icon,
-                lambda: self.notify(None),
+                lambda: self.notify(ToAccountPage()),
             )
         )
         self.__side_bar_layout.addWidget(
             self.__create_side_bar_button(
                 self.__data.resource.record_bar_icon,
-                lambda: self.notify(None),
+                lambda: self.notify(ToRecordPage()),
             )
         )
         self.__side_bar_layout.addWidget(
-            HoveredBrightnessButton(
+            self.__create_side_bar_button(
                 self.__data.resource.calendar_bar_icon,
-                QSize(SideBarMenu.MENU_SIZE, SideBarMenu.MENU_SIZE),
+                lambda: self.notify(ToCalendarPage()),
             )
         )
         self.__side_bar_layout.addWidget(
@@ -107,7 +109,7 @@ class Application(Observer):
     __side_bar_menu: SideBarMenu
 
     __backend: Backend
-    __current_page: Widget | None
+    __current_page: Optional[Widget]
 
     def __init__(self):
         super().__init__()
@@ -201,15 +203,18 @@ class Application(Observer):
     def response(self, message: object) -> None:
         match message:
             case ToAccountPage():
-                pass
+                self.__set_page(AccountPage(self.__backend))
+            case ToRecordPage():
+                self.__set_page(RecordPage(self.__backend))
+            case ToCalendarPage():
+                self.__set_page(CalendarPage(self.__backend))
             case object():
                 pass
 
     def __set_page(self, page: Widget) -> None:
         if self.__current_page is not None:
             self.__page_layout.replaceWidget(
-                self.__current_page.widget,
-                self.__side_bar_menu.get_page_widget(),
+                self.__current_page.widget, page.widget
             )
         else:
             self.__page_layout.insertWidget(1, page.widget)
