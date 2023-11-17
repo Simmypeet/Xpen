@@ -6,11 +6,11 @@ from application.account import AccountPage
 from application.auxiliary import HoveredBrightnessButton
 from application.calendar import CalendarPage
 from application.message import ToAccountPage, ToCalendarPage, ToRecordPage
-from application.observer import Observer, Subject
 from application.record import RecordPage
 from application.widget import Widget
+from application import auxiliary
 from backend import Backend
-from backend.history import History
+from backend.observer import Subject, Observer
 from backend.preference import Preference
 from backend.resource import Resource
 from PySide6.QtCore import QSize, Qt
@@ -44,31 +44,19 @@ class SideBarMenu(Subject):
         self.__side_bar_layout.addWidget(
             self.__create_side_bar_button(
                 self.__data.resource.account_bar_icon,
-                lambda: self.notify(ToAccountPage()),
+                lambda: self._notify(ToAccountPage()),
             )
         )
         self.__side_bar_layout.addWidget(
             self.__create_side_bar_button(
                 self.__data.resource.record_bar_icon,
-                lambda: self.notify(ToRecordPage()),
+                lambda: self._notify(ToRecordPage(None)),
             )
         )
         self.__side_bar_layout.addWidget(
             self.__create_side_bar_button(
                 self.__data.resource.calendar_bar_icon,
-                lambda: self.notify(ToCalendarPage()),
-            )
-        )
-        self.__side_bar_layout.addWidget(
-            HoveredBrightnessButton(
-                self.__data.resource.chart_bar_icon,
-                QSize(SideBarMenu.MENU_SIZE, SideBarMenu.MENU_SIZE),
-            )
-        )
-        self.__side_bar_layout.addWidget(
-            HoveredBrightnessButton(
-                self.__data.resource.setting_bar_icon,
-                QSize(SideBarMenu.MENU_SIZE, SideBarMenu.MENU_SIZE),
+                lambda: self._notify(ToCalendarPage(None)),
             )
         )
 
@@ -80,7 +68,7 @@ class SideBarMenu(Subject):
         self.__side_bar_widget.setLayout(self.__side_bar_layout)
 
         self.__side_bar_widget.setStyleSheet(
-            f"background-color: {self.__data.preference.sidebar_background_1}"
+            f"background-color: {self.__data.preference.teal_green_color}"
         )
 
     def __create_side_bar_button(
@@ -111,7 +99,7 @@ class Application(Observer):
     __backend: Backend
     __current_page: Optional[Widget]
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
         RESET_DIR_PROMPT = "The application data directory is corrupted. \
@@ -153,7 +141,7 @@ class Application(Observer):
                     exit(1)
 
         # loads the preference
-        preference_file_path = os.path.join(appdata_path, "preference.json")
+        preference_file_path = os.path.join(appdata_path, "preference.dat")
 
         try:
             preference = Preference.load_from_file(preference_file_path)
@@ -169,9 +157,7 @@ class Application(Observer):
             os.path.join(os.path.dirname(__file__), "resources")
         )
 
-        self.__backend = Backend(
-            preference, resource, History("test"), appdata_path
-        )
+        self.__backend = Backend(preference, resource, appdata_path)
 
         self.__page_layout = QHBoxLayout()
         self.__page_layout.setContentsMargins(0, 0, 0, 0)
@@ -189,7 +175,7 @@ class Application(Observer):
             0, self.__side_bar_menu.get_page_widget()
         )
 
-        self.__side_bar_menu.attach(self)
+        self.subscribe(self.__side_bar_menu)
 
         self.__set_page(AccountPage(self.__backend))
 
@@ -200,16 +186,34 @@ class Application(Observer):
 
         return self.__main_window
 
-    def response(self, message: object) -> None:
+    def _response(self, message: object) -> None:
         match message:
             case ToAccountPage():
                 self.__set_page(AccountPage(self.__backend))
-            case ToRecordPage():
-                self.__set_page(RecordPage(self.__backend))
-            case ToCalendarPage():
-                self.__set_page(CalendarPage(self.__backend))
+
+                assert self.__backend.current_working_account is not None
+
+            case ToRecordPage() as message:
+                if self.__backend.current_working_account is None:
+                    self.__require_current_working_account()
+                    return
+
+                self.__set_page(RecordPage(self.__backend, message.filter))
+            case ToCalendarPage() as message:
+                if self.__backend.current_working_account is None:
+                    self.__require_current_working_account()
+                    return
+
+                self.__set_page(CalendarPage(self.__backend, message.date))
             case object():
                 pass
+
+    def __require_current_working_account(self) -> None:
+        auxiliary.show_error_dialog(
+            "No account is currently selected",
+            self.__main_window,
+            self.__backend.preference,
+        )
 
     def __set_page(self, page: Widget) -> None:
         if self.__current_page is not None:
@@ -220,9 +224,9 @@ class Application(Observer):
             self.__page_layout.insertWidget(1, page.widget)
 
         if isinstance(self.__current_page, Subject):
-            self.__current_page.detach(self)
+            self.unsubscribe(self.__current_page)
 
         if isinstance(page, Subject):
-            page.attach(self)
+            self.subscribe(page)
 
         self.__current_page = page

@@ -5,32 +5,36 @@ from typing import Optional
 from application.auxiliary import (
     Collapsible,
     HoveredBrightnessButton,
-    NoAccountPage,
+    Page,
 )
 from application.widget import Widget
+from application.filter import Filter
 from backend import Backend
+from backend.account import RecordDiff, RecordCursor, LatestPosition
 from PySide6.QtCore import QSize, Qt
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtGui import QColor, QValidator
 from PySide6.QtWidgets import (
     QDialog,
+    QHBoxLayout,
     QFrame,
     QGraphicsDropShadowEffect,
+    QGridLayout,
     QLabel,
     QLineEdit,
+    QScrollArea,
     QSizePolicy,
+    QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
-    QScrollArea,
-    QGridLayout,
-    QToolButton,
-    QTextEdit,
 )
 
-from backend.account import RecordDiff, RecordIterator
 
-
-class NumberValidator(QValidator):
-    def validate(self, arg__1: str, arg__2: int):
+class _NumberValidator(QValidator):
+    def validate(
+        self, arg__1: str, arg__2: int
+    ) -> tuple[QValidator.State, str, int]:
         if arg__1 == "" or arg__1 == "-":
             return QValidator.State.Intermediate, arg__1, arg__2
 
@@ -50,11 +54,10 @@ class NumberValidator(QValidator):
             return QValidator.State.Invalid, arg__1, arg__2
 
 
-class RecordLabel(Widget):
+class _RecordLabel(Widget):
     __backend: Backend
     __main_widget: QWidget
     __main_layout: QVBoxLayout
-    __record_widget: QWidget
     __detail_collapsible: Collapsible
     __toggle_button: QToolButton
 
@@ -83,7 +86,7 @@ class RecordLabel(Widget):
         )
         self.__toggle_button.setStyleSheet(
             "QToolButton { border: none;"
-            f"color: {self.__backend.preference.account_line_separator}; "
+            f"color: {self.__backend.preference.light_gray_color}; "
             "}"
         )
         self.__toggle_button.setArrowType(Qt.ArrowType.RightArrow)
@@ -103,7 +106,7 @@ class RecordLabel(Widget):
         amount_label.setStyleSheet(
             f"""
                 font: 16px;
-                color: {self.__backend.preference.font_color};
+                color: {self.__backend.preference.black_color};
                 margin: 4px;
                 """
         )
@@ -117,7 +120,7 @@ class RecordLabel(Widget):
         date_label.setStyleSheet(
             f"""
                 font: 16px;
-                color: {self.__backend.preference.account_line_separator};
+                color: {self.__backend.preference.light_gray_color};
                 margin: 4px;
                 """
         )
@@ -130,9 +133,9 @@ class RecordLabel(Widget):
             f" {abs(record_diff.diff)}"
         )
         diff_label_color = (
-            self.__backend.preference.expense_color
+            self.__backend.preference.red_color
             if record_diff.diff < 0
-            else self.__backend.preference.income_color
+            else self.__backend.preference.green_color
         )
         diff_label.setStyleSheet(
             f"""
@@ -149,11 +152,11 @@ class RecordLabel(Widget):
         )
         tag_label.setStyleSheet(
             f"""
-                font: 16px;
-                font-weight: lighter;
-                color: {self.__backend.preference.account_line_separator};
-                margin: 4px;
-                """
+            font: 16px;
+            font-weight: lighter;
+            color: {self.__backend.preference.light_gray_color};
+            margin: 4px;
+            """
         )
         tag_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         record_diff_grid.addWidget(tag_label, 0, 2)
@@ -186,9 +189,9 @@ class RecordLabel(Widget):
         note_label.setTextFormat(Qt.TextFormat.MarkdownText)
 
         note_color = (
-            self.__backend.preference.font_color
+            self.__backend.preference.black_color
             if record_diff.record.note
-            else self.__backend.preference.account_line_separator
+            else self.__backend.preference.light_gray_color
         )
         note_label.setStyleSheet(
             f"""
@@ -212,7 +215,7 @@ class RecordLabel(Widget):
 
         self.__main_layout.addWidget(self.__detail_collapsible.widget)
 
-    def __toggle(self):
+    def __toggle(self) -> None:
         self.__toggle_button.setArrowType(
             Qt.ArrowType.DownArrow
             if self.__toggle_button.isChecked()
@@ -226,7 +229,7 @@ class RecordLabel(Widget):
         return self.__main_widget
 
 
-class DayRecordLabel(Widget):
+class _DayRecordLabel(Widget):
     __backend: Backend
     __date: date
     __records: list[RecordDiff]
@@ -262,17 +265,17 @@ class DayRecordLabel(Widget):
         date_label.setStyleSheet(
             f"""
             font: 20px;
-            color: {self.__backend.preference.font_color};
+            color: {self.__backend.preference.black_color};
             padding-bottom: 4px;
             border-bottom: 1px solid
-                {self.__backend.preference.account_line_separator};
+                {self.__backend.preference.light_gray_color};
             """
         )
         date_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.__day_record_list.addWidget(date_label)
 
         for record_diff in self.__records:
-            record = RecordLabel(self.__backend, record_diff)
+            record = _RecordLabel(self.__backend, record_diff)
             self.__day_record_list.addWidget(record.widget)
 
         self.__day_record_widget.setLayout(self.__day_record_list)
@@ -282,17 +285,20 @@ class DayRecordLabel(Widget):
         return self.__day_record_widget
 
 
-class RecordListPage(Widget):
+class _RecordList(Widget):
     __backend: Backend
 
     __record_list_widget: QWidget
     __record_list_layout: QVBoxLayout
     __record_list_scroll: QScrollArea
 
-    def __init__(self, backend: Backend):
+    __filter: Filter
+
+    def __init__(self, backend: Backend, filter: Filter) -> None:
         super().__init__()
 
         self.__backend = backend
+        self.__filter = filter
 
         self.__record_list_scroll = QScrollArea()
         self.__record_list_widget = QWidget()
@@ -305,35 +311,45 @@ class RecordListPage(Widget):
 
         assert self.__backend.current_working_account is not None
 
-        # TODO: add record list here bozo
         last_date: date | None = None
         record_diffs: list[RecordDiff] = []
-        for record_diff in RecordIterator(
-            self.__backend.current_working_account
-        ):
+        cursor = RecordCursor(
+            self.__backend.current_working_account, LatestPosition()
+        )
+
+        while True:
+            record_diff = cursor.previous()
+            if record_diff is None:
+                break
+
             if (
                 last_date is None
                 or last_date == record_diff.record.date.date()
             ):
-                last_date = record_diff.record.date.date()
-                record_diffs.append(record_diff)
+                if self.__filter.filter(record_diff):
+                    last_date = record_diff.record.date.date()
+                    record_diffs.append(record_diff)
             else:
-                self.__record_list_layout.addWidget(
-                    DayRecordLabel(
-                        self.__backend, last_date, record_diffs
-                    ).widget
-                )
-                record_diffs = [record_diff]
-                last_date = record_diff.record.date.date()
+                if len(record_diffs) > 0:
+                    self.__record_list_layout.addWidget(
+                        _DayRecordLabel(
+                            self.__backend, last_date, record_diffs
+                        ).widget
+                    )
+                    record_diffs.clear()
 
-        if last_date is not None:
+                if self.__filter.filter(record_diff):
+                    record_diffs.append(record_diff)
+                    last_date = record_diff.record.date.date()
+
+        if last_date is not None and len(record_diffs) > 0:
             self.__record_list_layout.addWidget(
-                DayRecordLabel(self.__backend, last_date, record_diffs).widget
+                _DayRecordLabel(self.__backend, last_date, record_diffs).widget
             )
 
         self.__record_list_widget.setLayout(self.__record_list_layout)
         self.__record_list_widget.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding
         )
 
         self.__record_list_scroll.setVerticalScrollBarPolicy(
@@ -356,134 +372,116 @@ class RecordListPage(Widget):
             """
         )
 
+        self.__record_list_scroll.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+
     @property
     def widget(self) -> QWidget:
         return self.__record_list_scroll
 
 
-class RecordPage(Widget):
+class _Content(Widget):
     __backend: Backend
-
-    __account_frame: QFrame
-    __page_layout: QVBoxLayout
-
+    __main_layout: QVBoxLayout
+    __main_widget: QWidget
+    __record_list: _RecordList
     __new_record_button: HoveredBrightnessButton
-    __current_widget: Optional[Widget]
+    __filter_button: HoveredBrightnessButton
+    __filter: Filter
 
-    def __init__(self, backend: Backend):
-        super().__init__()
-
+    def __init__(
+        self, backend: Backend, default_filter: Optional[Filter]
+    ) -> None:
         self.__backend = backend
-        self.__current_widget = None
-        self.__account_frame = QFrame()
-        self.__account_frame.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        self.__page_layout = QVBoxLayout()
-        self.__page_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.__page_layout.setContentsMargins(0, 0, 0, 0)
-        self.__page_layout.setSpacing(0)
-        self.__account_frame.setLayout(self.__page_layout)
 
-        # Add account label
-        account_label = QLabel("Records")
-        account_label.setStyleSheet(
-            f"""
-            font: 24px;
-            color: {self.__backend.preference.font_color};
-            padding: 15px;
-            background-color: {self.__backend.preference.generic_background_1};
-            """
-        )
-        account_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.__main_widget = QWidget()
+        if default_filter is not None:
+            self.__filter = default_filter
+        else:
+            self.__filter = Filter()
 
-        self.__page_layout.insertWidget(
-            0,
-            account_label,
-        )
+        self.__main_layout = QVBoxLayout()
+        self.__main_layout.setContentsMargins(0, 0, 0, 0)
+        self.__main_layout.setSpacing(0)
+        self.__main_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # Add account page layout
-        self.__show_record_page()
+        self.__main_widget.setLayout(self.__main_layout)
 
-        drop_shadow = QGraphicsDropShadowEffect(self.__account_frame)
-        drop_shadow.setBlurRadius(10)
-        drop_shadow.setColor(QColor(0, 0, 0, 100))
-        drop_shadow.setOffset(1, 1)
+        self.__record_list = _RecordList(self.__backend, self.__filter)
+        self.__main_layout.addWidget(self.__record_list.widget)
+
+        button_hbox_layout = QHBoxLayout()
+        button_hbox_layout.setContentsMargins(0, 0, 0, 0)
+        button_hbox_layout.setSpacing(0)
+        button_hbox_layout.setAlignment(Qt.AlignmentFlag.AlignRight)
+        button_hbox_layout.setDirection(QHBoxLayout.Direction.RightToLeft)
+
+        def create_button(svg_icon: QSvgRenderer) -> HoveredBrightnessButton:
+            drop_shadow = QGraphicsDropShadowEffect(self.__main_widget)
+            drop_shadow.setBlurRadius(10)
+            drop_shadow.setColor(QColor(0, 0, 0, 100))
+            drop_shadow.setOffset(1, 1)
+
+            button = HoveredBrightnessButton(
+                svg_icon,
+                QSize(50, 50),
+                f"""
+                background-color: {self.__backend.preference.teal_green_color};
+                border-radius: 21px;
+                margin: 4px;
+                """,
+                icon_size_factor=0.3,
+                hover_icon_size_factor=1.2,
+            )
+
+            button.setGraphicsEffect(drop_shadow)
+
+            return button
 
         # Add new account button
-        self.__new_record_button = HoveredBrightnessButton(
-            self.__backend.resource.new_account_symbol,
-            QSize(50, 50),
-            f"""
-            background-color: {self.__backend.preference.button_color_1};
-            border-radius: 21px;
-            margin: 4px;
-            """,
-            icon_size_factor=0.3,
-            hover_icon_size_factor=1.2,
+        self.__new_record_button = create_button(
+            self.__backend.resource.new_account_symbol
         )
-        self.__new_record_button.setGraphicsEffect(drop_shadow)
-
         self.__new_record_button.clicked.connect(
             lambda: self.__create_record_button_handler()
         )
+        button_hbox_layout.addWidget(self.__new_record_button)
 
-        if self.__backend.current_working_account is not None:
-            self.__page_layout.addWidget(
-                self.__new_record_button,
-                alignment=Qt.AlignmentFlag.AlignRight,
-            )
-
-    def __show_record_page(self):
-        if self.__backend.current_working_account is not None:
-            widget_to_add = RecordListPage(self.__backend)
-        else:
-            widget_to_add = NoAccountPage(self.__backend)
-
-        if self.__current_widget is not None:
-            self.__page_layout.replaceWidget(
-                self.__current_widget.widget,
-                widget_to_add.widget,
-            )
-        else:
-            self.__page_layout.addWidget(widget_to_add.widget)
-
-        self.__current_widget = widget_to_add
-
-    @property
-    def widget(self) -> QWidget:
-        return self.__account_frame
-
-    def __amount_edited_handler(self, line_edit: QLineEdit):
-        color = (
-            self.__backend.preference.expense_color
-            if "-" in line_edit.text()
-            else self.__backend.preference.income_color
-            if len(line_edit.text()) > 0
-            else self.__backend.preference.font_color
+        self.__filter_button = create_button(
+            self.__backend.resource.filter_symbol
         )
-        style = f"""
-        font: 16px;
-        color: {color};
-        border: 0px;
-        padding: 4px;
-        """
+        self.__filter_button.clicked.connect(
+            lambda: Filter.show_propmt_dialog(
+                self.__backend.preference,
+                self.__main_widget,
+                self.__filter,
+                lambda filter: self.__filter_updated(filter),
+            )
+        )
+        button_hbox_layout.addWidget(self.__filter_button)
 
-        line_edit.setStyleSheet(style)
+        self.__main_layout.addLayout(button_hbox_layout)
+
+    def __filter_updated(self, new_filter: Filter) -> None:
+        self.__filter = new_filter
+        self.__refresh_record_list()
+
+    def __refresh_record_list(self) -> None:
+        new_record_list = _RecordList(self.__backend, self.__filter)
+        self.__main_layout.replaceWidget(
+            self.__record_list.widget, new_record_list.widget
+        )
+        self.__record_list = new_record_list
 
     def __create_record_button_handler(self):
-        widget = QDialog(self.__account_frame)
+        widget = QDialog(self.__main_widget)
         widget.setWindowModality(Qt.WindowModality.WindowModal)
         layout = QVBoxLayout()
 
         new_account_label = QLabel("New Record", parent=widget)
         new_account_label.setStyleSheet(
-            f"""
-            font: 16px;
-            color: {self.__backend.preference.font_color};
-            font-weight: bold;
-            padding: 0px 8px 0px 0px;
-            """
+            self.__backend.preference.dialog_prompt_header_style
         )
         layout.addWidget(new_account_label)
 
@@ -492,28 +490,18 @@ class RecordPage(Widget):
         new_record_amount.setFixedWidth(200)
         new_record_amount.setPlaceholderText(placeholder_text)
         new_record_amount.setStyleSheet(
-            f"""
-            font: 16px;
-            color: {self.__backend.preference.font_color};
-            border: 0px;
-            padding: 4px;
-            """
+            self.__backend.preference.dialog_line_edit_style()
         )
         new_record_amount.textEdited.connect(
             lambda: self.__amount_edited_handler(new_record_amount)
         )
-        new_record_amount.setValidator(NumberValidator())
+        new_record_amount.setValidator(_NumberValidator())
         layout.addWidget(new_record_amount)
 
         new_record_tag = QLineEdit(parent=widget)
         new_record_tag.setPlaceholderText("Tag")
         new_record_tag.setStyleSheet(
-            f"""
-            font: 16px;
-            color: {self.__backend.preference.font_color};
-            border: 0px;
-            padding: 4px;
-            """
+            self.__backend.preference.dialog_line_edit_style()
         )
         layout.addWidget(new_record_tag)
 
@@ -521,12 +509,7 @@ class RecordPage(Widget):
         new_record_note.setPlaceholderText("Note")
         new_record_note.setFixedHeight(100)
         new_record_note.setStyleSheet(
-            f"""
-            font: 16px;
-            color: {self.__backend.preference.font_color};
-            border: 0px;
-            padding: 4px;
-            """
+            self.__backend.preference.dialog_line_edit_style()
         )
         new_record_note.verticalScrollBar().setStyleSheet(
             self.__backend.preference.scroll_style_sheet
@@ -541,7 +524,7 @@ class RecordPage(Widget):
             self.__backend.resource.new_account_symbol,
             QSize(36, 36),
             f"""
-            background-color: {self.__backend.preference.button_color_1};
+            background-color: {self.__backend.preference.teal_green_color};
             border-radius: 18px;
             """,
             icon_size_factor=0.4,
@@ -563,9 +546,22 @@ class RecordPage(Widget):
         widget.setLayout(layout)
         widget.exec()
 
+    def __amount_edited_handler(self, line_edit: QLineEdit) -> None:
+        color = (
+            self.__backend.preference.red_color
+            if "-" in line_edit.text()
+            else self.__backend.preference.green_color
+            if len(line_edit.text()) > 0
+            else self.__backend.preference.black_color
+        )
+
+        line_edit.setStyleSheet(
+            self.__backend.preference.dialog_line_edit_style(color)
+        )
+
     def __record_created_handler(
         self, amount_str: str, note: str, tag: str, dialog_widget: QDialog
-    ):
+    ) -> None:
         try:
             amount = Decimal(amount_str)
             dialog_widget.close()
@@ -584,5 +580,15 @@ class RecordPage(Widget):
             note if len(note) > 0 else None,
         )
 
-        # refresh
-        self.__show_record_page()
+        self.__refresh_record_list()
+
+    @property
+    def widget(self) -> QWidget:
+        return self.__main_widget
+
+
+class RecordPage(Page):
+    def __init__(
+        self, backend: Backend, default_filter: Optional[Filter]
+    ) -> None:
+        super().__init__(backend, "Records", _Content(backend, default_filter))

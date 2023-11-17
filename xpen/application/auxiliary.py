@@ -1,31 +1,76 @@
+from abc import ABC
 from typing import Final, Optional
 
 from application.widget import Widget
 from backend import Backend
+from backend.preference import Preference
 from PySide6.QtCore import (
+    QEasingCurve,
     QEvent,
+    QParallelAnimationGroup,
+    QPropertyAnimation,
     QSize,
     Qt,
-    QParallelAnimationGroup,
-    QAbstractAnimation,
-    QPropertyAnimation,
-    QEasingCurve,
 )
-from PySide6.QtGui import (
-    QColor,
-    QEnterEvent,
-    QIcon,
-    QPainter,
-    QPixmap,
-)
+from PySide6.QtGui import QColor, QEnterEvent, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
-    QPushButton,
-    QWidget,
-    QVBoxLayout,
+    QDialog,
     QLabel,
+    QPushButton,
     QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
+
+
+class Page(Widget, ABC):
+    __backend: Backend
+
+    __main_widget: QWidget
+    __main_layout: QVBoxLayout
+
+    __header_label: QLabel
+    __content_widget: Widget
+
+    def __init__(
+        self, backend: Backend, page_name: str, content_widget: Widget
+    ) -> None:
+        super().__init__()
+
+        self.__backend = backend
+        self.__main_widget = QWidget()
+        self.__main_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self.__main_layout = QVBoxLayout()
+        self.__main_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.__main_layout.setContentsMargins(0, 0, 0, 0)
+        self.__main_layout.setSpacing(0)
+        self.__main_widget.setLayout(self.__main_layout)
+        self.__content_widget = content_widget
+
+        # Add account label
+        self.__header_label = QLabel(page_name)
+        self.__header_label.setStyleSheet(
+            self.__backend.preference.page_header_label_style
+        )
+        self.__header_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        self.__main_layout.addWidget(self.__header_label)
+        self.__main_layout.addWidget(content_widget.widget)
+
+    @property
+    def backend(self) -> Backend:
+        return self.__backend
+
+    @property
+    def content_widget(self) -> Widget:
+        return self.__content_widget
+
+    @property
+    def widget(self) -> QWidget:
+        return self.__main_widget
 
 
 class HoveredBrightnessButton(QPushButton):
@@ -91,7 +136,7 @@ class HoveredBrightnessButton(QPushButton):
         return QIcon(pixmap)
 
 
-class NoAccountPage(Widget):
+class InvalidPage(Widget):
     """
     A page shown when no account is found or no account is selected.
     """
@@ -101,7 +146,7 @@ class NoAccountPage(Widget):
 
     __no_account_layout: QVBoxLayout
 
-    def __init__(self, backend: Backend):
+    def __init__(self, backend: Backend) -> None:
         self.__widget = QWidget()
         self.__backend = backend
 
@@ -117,7 +162,7 @@ class NoAccountPage(Widget):
             painter.CompositionMode.CompositionMode_SourceIn
         )
         painter.fillRect(
-            pixmap.rect(), QColor(self.__backend.preference.font_color)
+            pixmap.rect(), QColor(self.__backend.preference.black_color)
         )
         painter.end()
 
@@ -133,7 +178,7 @@ class NoAccountPage(Widget):
         no_account_text.setStyleSheet(
             f"""
             font: 16px;
-            color: {self.__backend.preference.font_color};
+            color: {self.__backend.preference.black_color};
             """
         )
 
@@ -150,6 +195,7 @@ class NoAccountPage(Widget):
         return self.__widget
 
 
+# TODO: Add animation
 class Collapsible(Widget):
     __content_area: QWidget
 
@@ -170,16 +216,12 @@ class Collapsible(Widget):
         # Let the entire widget grow and shrink with its content
         self.__toggle_animation = QParallelAnimationGroup(self.__content_area)
         # Don't waste space
+        self.__content_area.setVisible(False)
 
         self.__set_content_layout()
 
     def toggle(self) -> None:
-        self.__toggle_animation.setDirection(
-            QAbstractAnimation.Direction.Backward
-            if self.__expanded
-            else QAbstractAnimation.Direction.Forward
-        )
-        self.__toggle_animation.start()
+        self.__content_area.setVisible(not self.__content_area.isVisible())
 
         self.__expanded = not self.__expanded
 
@@ -187,13 +229,43 @@ class Collapsible(Widget):
         content_animation = QPropertyAnimation(
             self.__content_area, b"maximumHeight"
         )
-        content_animation.setStartValue(0)
+        content_animation.setStartValue(self.__content_area.minimumHeight())
         content_animation.setEasingCurve(QEasingCurve.Type.InOutQuart)
         content_animation.setDuration(self.__animation_duration)
         content_animation.setEndValue(self.__content_area.sizeHint().height())
         self.__toggle_animation.addAnimation(content_animation)
-        self.__content_area.setMaximumHeight(0)
+        # self.__content_area.setMaximumHeight(0)
 
     @property
     def widget(self) -> QWidget:
         return self.__content_area
+
+
+def show_error_dialog(
+    message: str, parent_widget: QWidget, preference: Preference
+):
+    error_dialog = QDialog(parent_widget)
+    error_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+
+    layout = QVBoxLayout()
+
+    error_label = QLabel(message)
+    error_label.setStyleSheet(
+        f"""
+        font: {preference.sub_header_size}px;
+        color: {preference.black_color};
+        padding: {preference.sub_header_size * 0.5}px;
+        """
+    )
+    layout.addWidget(error_label)
+
+    close_button = QPushButton("Close")
+    close_button.setStyleSheet(
+        preference.prompt_button_style(preference.teal_red_color)
+    )
+    close_button.clicked.connect(lambda: error_dialog.close())
+    layout.addWidget(close_button, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    error_dialog.setLayout(layout)
+
+    error_dialog.exec()

@@ -15,13 +15,20 @@ class Resource:
     account_bar_icon: QSvgRenderer
     record_bar_icon: QSvgRenderer
     calendar_bar_icon: QSvgRenderer
-    chart_bar_icon: QSvgRenderer
-    setting_bar_icon: QSvgRenderer
     account_not_found_symol: QSvgRenderer
     new_account_symbol: QSvgRenderer
+    filter_symbol: QSvgRenderer
 
     @staticmethod
     def load_from_resource_folder(resource_folder: str) -> Resource:
+        """Loads the resource from the given resource folder.
+
+        Args:
+            resource_folder (str): The path to the resource folder.
+
+        Returns:
+            Resource: The resource object.
+        """
         account_bar_icon = QSvgRenderer(
             os.path.join(resource_folder, "icon", "account_bar_icon.svg")
         )
@@ -31,12 +38,6 @@ class Resource:
         calendar_bar_icon = QSvgRenderer(
             os.path.join(resource_folder, "icon", "calendar_bar_icon.svg")
         )
-        chart_bar_icon = QSvgRenderer(
-            os.path.join(resource_folder, "icon", "chart_bar_icon.svg")
-        )
-        setting_bar_icon = QSvgRenderer(
-            os.path.join(resource_folder, "icon", "setting_bar_icon.svg")
-        )
         account_not_found_symbol = QSvgRenderer(
             os.path.join(
                 resource_folder, "symbol", "account_not_found_symbol.svg"
@@ -45,13 +46,15 @@ class Resource:
         new_account_symbol = QSvgRenderer(
             os.path.join(resource_folder, "symbol", "new_account_symbol.svg")
         )
+        filter_symbol = QSvgRenderer(
+            os.path.join(resource_folder, "symbol", "filter_symbol.svg")
+        )
 
         return Resource(
             account_bar_icon,
             record_bar_icon,
             calendar_bar_icon,
-            chart_bar_icon,
-            setting_bar_icon,
             account_not_found_symbol,
             new_account_symbol,
+            filter_symbol,
         )

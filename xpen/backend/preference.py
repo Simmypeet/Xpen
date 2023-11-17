@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
+import pickle
 from dataclasses import dataclass
 from enum import Enum
-
-from backend.corrupted import CorruptedDataFileError
+from typing import Optional
 
 
 class Currency(Enum):
@@ -28,8 +27,8 @@ class Currency(Enum):
             raise Exception("Unknown currency")
 
 
-class CorruptedPreferenceFileError(CorruptedDataFileError):
-    """An exception raised when the preference file is invalid/corrupted"""
+class CorruptedPreferenceFileError(Exception):
+    """Raised when the preference file cannot be loaded due to corruption"""
 
     pass
 
@@ -40,129 +39,113 @@ class Preference:
 
     currency: Currency = Currency.THB
     font: str = "San Francisco"
-    font_color: str = "#2d3436"
-    page_text_background: str = "#fab1a0"
-    account_line_separator: str = "#b2bec3"
-    generic_background_1: str = "#dfe6e9"
-    sidebar_background_1: str = "#55efc4"
-    button_color_1: str = "#55efc4"
-    button_color_2: str = "#ff7675"
-    expense_color: str = "#c0392b"
-    income_color: str = "#27ae60"
-    scroll_style_sheet: str = """
-        QScrollBar:vertical {
-            border: none;
-            background: #FFFFFF;
-            width: 10px;
-            margin: 0px 0px 0px 0px;
-        }
+    black_color: str = "#2d3436"
+    light_red_color: str = "#fab1a0"
+    light_gray_color: str = "#b2bec3"
+    teal_white_color: str = "#dfe6e9"
+    teal_green_color: str = "#55efc4"
+    teal_red_color: str = "#ff7675"
+    red_color: str = "#c0392b"
+    green_color: str = "#27ae60"
+    calm_green_color: str = "#1abc9c"
+    header_size: int = 24
+    sub_header_size: int = 18
+    content_size: int = 14
 
-        QScrollBar::handle:vertical {
-            background: #D0D0D0;
-            min-height: 20px;
-            border-radius: 5px;
-        }
+    def prompt_button_style(self, color: str) -> str:
+        return f"""
+            font: {self.content_size}px;
+            color: {self.black_color};
+            padding: {self.content_size * 0.5}px;
+            border-radius: {self.content_size * 0.25}px;
+            border: 0px;
+            background-color: {color};
+        """
 
-        QScrollBar::add-line:vertical {
-            border: none;
-            background: none;
-            height: 0px;
-            subcontrol-position: bottom;
-            subcontrol-origin: margin;
-        }
+    @property
+    def dialog_prompt_header_style(self) -> str:
+        return f"""
+            font: {self.sub_header_size}px;
+            color: {self.black_color};
+            font-weight: bold;
+        """
 
-        QScrollBar::sub-line:vertical {
-            border: none;
-            background: none;
-            height: 0px;
-            subcontrol-position: top;
-            subcontrol-origin: margin;
-        }
+    def dialog_line_edit_style(self, color: Optional[str] = None) -> str:
+        return f"""
+            font: {self.content_size}px;
+            color: {self.black_color if color is None else color};
+            border: 0px;
+            padding: {self.content_size * 0.5}px;
+        """
 
-        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-            background: none;
-        }
-    """
+    @property
+    def scroll_style_sheet(self) -> str:
+        return """
+            QScrollBar:vertical {
+                border: none;
+                background: #FFFFFF;
+                width: 10px;
+                margin: 0px 0px 0px 0px;
+            }
 
-    def save(self, file_path: str):
+            QScrollBar::handle:vertical {
+                background: #D0D0D0;
+                min-height: 20px;
+                border-radius: 5px;
+            }
+
+            QScrollBar::add-line:vertical {
+                border: none;
+                background: none;
+                height: 0px;
+                subcontrol-position: bottom;
+                subcontrol-origin: margin;
+            }
+
+            QScrollBar::sub-line:vertical {
+                border: none;
+                background: none;
+                height: 0px;
+                subcontrol-position: top;
+                subcontrol-origin: margin;
+            }
+
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }"""
+
+    @property
+    def page_header_label_style(self) -> str:
+        return f"""
+        font: {self.header_size}px;
+        color: {self.black_color};
+        padding: {int(self.header_size * 0.75)} ;
+        background-color: {self.teal_white_color};
+        """
+
+    def save(self, file_path: str) -> None:
         """
         Saves the preference to the file at the given path.
         """
 
-        with open(file_path, "w") as preference_file:
-            preference_json = {
-                "currency": self.currency.name,
-                "font": self.font,
-                "font_color": self.font_color,
-                "page_text_background": self.page_text_background,
-                "account_line_separator": self.account_line_separator,
-                "text_background_2": self.page_text_background,
-                "generic_background_1": self.generic_background_1,
-                "sidebar_background_1": self.sidebar_background_1,
-                "button_color_1": self.button_color_1,
-                "button_color_2": self.button_color_2,
-                "expense_color": self.expense_color,
-                "income_color": self.income_color,
-            }
-
-            json.dump(preference_json, preference_file)
+        with open(file_path, "wb") as preference_file:
+            pickle.dump(self, preference_file)
 
     @staticmethod
     def load_from_file(path: str) -> Preference:
         """
         Loads the preference from the file at the given path.
 
-        The accepted format is JSON.
-
         :param path: The path to the preference file
         """
 
-        with open(path) as preference_file:
-            preference_json = json.load(preference_file)
-
-            # reads the currency
+        with open(path, "rb") as preference_file:
             try:
-                currency_json = preference_json["currency"]
-                currency = None
+                preference = pickle.load(preference_file)
 
-                if currency_json == "THB":
-                    currency = Currency.THB
-                elif currency_json == "USD":
-                    currency = Currency.USD
-                else:
+                if not isinstance(preference, Preference):
                     raise CorruptedPreferenceFileError()
 
-                font = str(preference_json["font"])
-                font_color = str(preference_json["font_color"])
-                page_text_background = str(
-                    preference_json["page_text_background"]
-                )
-                account_line_separator = str(
-                    preference_json["account_line_separator"]
-                )
-                generic_background_1 = str(
-                    preference_json["generic_background_1"]
-                )
-                sidebar_background_1 = str(
-                    preference_json["sidebar_background_1"]
-                )
-                button_color_1 = str(preference_json["button_color_1"])
-                button_color_2 = str(preference_json["button_color_2"])
-                expense_color = str(preference_json["expense_color"])
-                income_color = str(preference_json["income_color"])
-
-                return Preference(
-                    currency,
-                    font,
-                    font_color,
-                    page_text_background,
-                    account_line_separator,
-                    generic_background_1,
-                    sidebar_background_1,
-                    button_color_1,
-                    button_color_2,
-                    expense_color,
-                    income_color,
-                )
+                return preference
             except Exception:
                 raise CorruptedPreferenceFileError()
