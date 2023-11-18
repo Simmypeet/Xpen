@@ -191,8 +191,6 @@ class Application(Observer):
             case ToAccountPage():
                 self.__set_page(AccountPage(self.__backend))
 
-                assert self.__backend.current_working_account is not None
-
             case ToRecordPage() as message:
                 if self.__backend.current_working_account is None:
                     self.__require_current_working_account()
