@@ -22,7 +22,7 @@ class Record:
     date: datetime
     """The date time when the record was created"""
     note: Optional[str]
-    """Optional note for the record""" ""
+    """Optional note for the record"""
 
 
 @dataclass(frozen=True)
@@ -438,7 +438,8 @@ class Account(Subject):
                 where all the records are stored in.
 
         Raises:
-            InvalidAccountDataPathError: _description_
+            InvalidAccountDataPathError: If the given path does not exist or
+                is not a directory.
         """
         super().__init__()
 

@@ -169,7 +169,7 @@ class Backend:
 
         self.__account_by_name[new_account_name] = account
 
-        account.__Acount_rename(new_account_name)  # type: ignore
+        account._Account__rename(new_account_name)  # type: ignore
 
     def delete_account(self, account: Account) -> None:
         """Removes the given account from the backend.
@@ -185,7 +185,7 @@ class Backend:
         if account not in self.__account_by_name.values():
             raise InvalidAccountError()
 
-        self.__account_by_name.pop(account.name)
+        del self.__account_by_name[account.name]
 
         # delete the account data directory
         account_data_path = os.path.join(
